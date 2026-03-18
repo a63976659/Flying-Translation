@@ -55,18 +55,39 @@ export function 检测重复行(jsonText, isCaseSensitive = true) {
     let totalDuplicates = 0;
     
     lines.forEach((line, index) => {
-        const lineContent = line;
-        if (lineContent.trim().length === 0 || lineContent.trim() === '{' || lineContent.trim() === '}') return; // 忽略空行和孤立括号
+        const lineContent = line.trim();
+        // 忽略空行和孤立括号
+        if (lineContent.length === 0 || lineContent === '{' || lineContent === '}') return; 
         
-        const key = isCaseSensitive ? lineContent : lineContent.toLowerCase();
-        if (lineMap.has(key)) lineMap.get(key).push(index + 1);
-        else lineMap.set(key, [index + 1]);
+        // 【核心修改1】：专门拦截形如 "NodeClass": { 的外层主键行
+        const nodeKeyMatch = lineContent.match(/^"([^"]+)"\s*:\s*\{/);
+        
+        // 如果不是对象起始行，直接跳过
+        if (!nodeKeyMatch) return;
+
+        let rawKey = nodeKeyMatch[1];
+
+        // 【核心修改2】：精准剔除 JSON 内部的结构化系统字段！
+        // 这样 inputs、widgets、outputs 就再也不会引发误报了
+        if (["inputs", "widgets", "outputs"].includes(rawKey.toLowerCase())) {
+            return;
+        }
+
+        // 提取外层类名，强制转小写并剥离所有下划线与空格用于底层硬核比对
+        let compareKey = rawKey.toLowerCase().replace(/[_ ]/g, '');
+        
+        if (lineMap.has(compareKey)) {
+            lineMap.get(compareKey).lines.push(index + 1);
+        } else {
+            // 记录下这行代码最原始的形态用于高亮反馈
+            lineMap.set(compareKey, { original: lineContent, lines: [index + 1] });
+        }
     });
     
-    lineMap.forEach((lineNumbers, lineContent) => {
-        if (lineNumbers.length > 1) {
-            duplicateLines.push({ content: lineContent, lines: lineNumbers, count: lineNumbers.length });
-            totalDuplicates += lineNumbers.length;
+    lineMap.forEach((data, compareKey) => {
+        if (data.lines.length > 1) {
+            duplicateLines.push({ content: data.original, lines: data.lines, count: data.lines.length });
+            totalDuplicates += data.lines.length;
         }
     });
     

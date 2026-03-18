@@ -152,10 +152,15 @@ def 注册路由(app):
                         return web.json_response({"status": "error", "message": "请求超时。"})
             
             elif 计算模式 == "local":
-                # 【修改点】：彻底解除了对本地视觉解析的封印
+                # 定义双向智能搜索目录，优先搜索 prompt_generator，其次搜索 LLM
                 if 图像Base64: 
                     def 运行本地视觉推理():
-                        return 本地引擎实例.视觉解析(图像Base64, 目标语言, 模型名称, 模型基础目录, print)
+                        搜索目录列表 = [
+                            os.path.abspath(os.path.join(ComfyUI根目录, "models", "prompt_generator")),
+                            模型基础目录
+                        ]
+                        return 本地引擎实例.视觉解析(图像Base64, 目标语言, 模型名称, 搜索目录列表, print)
+                    
                     最终数据 = await asyncio.to_thread(运行本地视觉推理)
                     return web.json_response({"status": "success", "data": 最终数据})
 
@@ -174,14 +179,13 @@ def 注册路由(app):
             return web.json_response({"status": "error", "message": str(e)})
 
     # ==========================================
-    # API 6: 智能模糊匹配文件夹 (增强前缀剥离算法)
+    # API 6: 智能模糊匹配文件夹 (深度剥离版，专治 ComfyUI 前缀)
     # ==========================================
     @routes.post("/flying_trans/api/smart_match_plugin")
     async def 智能匹配插件(request):
         try:
             关键词 = (await request.json()).get("keyword", "").strip()
             
-            # 防御机制：如果关键词为空或者为占位符，直接拒绝匹配
             if not 关键词 or 关键词.lower() == "unknown" or 关键词 == "等待大模型提取或手动输入...": 
                 return web.json_response({"status": "success", "matched_folder": ""})
             
@@ -191,21 +195,20 @@ def 注册路由(app):
             最佳匹配 = ""
             最高分 = 0.0
             
-            # 【修改点】：清理算法增加对 ComfyUI 前缀的暴力剥离
             关键词_小写 = 关键词.lower()
+            # 【修复遗漏】：补回对 comfyui 前缀的彻底切除
             关键词_纯净 = 关键词_小写.replace("comfyui-", "").replace("comfyui_", "").replace("comfyui", "").replace("-", "").replace("_", "").replace(" ", "")
             if not 关键词_纯净: 
                 return web.json_response({"status": "success", "matched_folder": ""})
             
             for 目录 in 所有目录:
                 目录_小写 = 目录.lower()
+                # 【修复遗漏】：补回对 comfyui 前缀的彻底切除
                 目录_纯净 = 目录_小写.replace("comfyui-", "").replace("comfyui_", "").replace("comfyui", "").replace("-", "").replace("_", "").replace(" ", "")
                 
-                # 规则1（最高优先级）：如果纯字母完全包含
                 if 关键词_纯净 in 目录_纯净 or 目录_纯净 in 关键词_纯净:
                     分数 = 0.9 + difflib.SequenceMatcher(None, 关键词_纯净, 目录_纯净).ratio() * 0.1
                 else:
-                    # 规则2：使用原版 difflib 补充测试变体
                     搜索变体 = [关键词_小写, f"comfyui-{关键词_小写}", f"comfyui_{关键词_小写}"]
                     分数 = max([difflib.SequenceMatcher(None, v, 目录_小写).ratio() for v in 搜索变体])
                 
@@ -213,7 +216,6 @@ def 注册路由(app):
                     最高分 = 分数
                     最佳匹配 = 目录
             
-            # 及格线设定
             if 最高分 >= 0.4: 
                 return web.json_response({"status": "success", "matched_folder": 最佳匹配})
             else: 
@@ -328,6 +330,36 @@ def 注册路由(app):
             确保缓存目录存在()
             return web.json_response({"status": "success", "message": "已彻底清空！"})
         except Exception as e: 
+            return web.json_response({"status": "error", "message": str(e)})
+
+    # ==========================================
+    # API 11: 物理硬盘级保存与加载代码编辑器的历史记录
+    # ==========================================
+    @routes.post("/flying_trans/api/history")
+    async def 保存编辑器历史(request):
+        try:
+            参数 = await request.json()
+            历史文件路径 = os.path.join(当前插件目录, "editor_history.json")
+            
+            def 写硬盘():
+                with open(历史文件路径, "w", encoding="utf-8") as f:
+                    json.dump(参数.get("history", []), f, ensure_ascii=False)
+            
+            await asyncio.to_thread(写硬盘)
+            return web.json_response({"status": "success"})
+        except Exception as e:
+            return web.json_response({"status": "error", "message": str(e)})
+
+    @routes.get("/flying_trans/api/history")
+    async def 读取编辑器历史(request):
+        try:
+            历史文件路径 = os.path.join(当前插件目录, "editor_history.json")
+            if os.path.exists(历史文件路径):
+                with open(历史文件路径, "r", encoding="utf-8") as f:
+                    数据 = json.load(f)
+                return web.json_response({"status": "success", "history": 数据})
+            return web.json_response({"status": "success", "history": []})
+        except Exception as e:
             return web.json_response({"status": "error", "message": str(e)})
 
     app.add_routes(routes)

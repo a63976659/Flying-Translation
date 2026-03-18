@@ -55,9 +55,6 @@ class 大模型客户端:
         日志回调函数(">>> ✅ 模型加载成功！")
 
     def 分块翻译(self, 数据块, 目标语言, 进度回调函数=None):
-        """
-        核心翻译引擎：加入了强效 One-Shot 示例，彻底解决 title 不翻译和保守幻觉
-        """
         system_prompt = f"""
 你是一个专业的 ComfyUI 插件本地化翻译专家。任务是将 JSON 文件中的英文字符串（Value）翻译成 {目标语言}。
 
@@ -117,7 +114,6 @@ class 大模型客户端:
         ids = [out[len(inp):] for inp, out in zip(inputs.input_ids, generated_ids)]
         content = self.分词器.batch_decode(ids, skip_special_tokens=True)[0]
         
-        # 鲁棒的 JSON 提取逻辑
         if "```" in content: 
             content = content.split("```json")[-1].split("```")[0].strip()
             if not content: content = content.split("```")[-1].split("```")[0].strip()
@@ -135,69 +131,98 @@ class 大模型客户端:
         return self._执行规则后处理(result, 目标语言)
 
     # ==========================================
-    # 新增核心：本地多模态视觉推理分支
+    # 核心：本地多模态视觉推理分支 (彻底分离架构)
     # ==========================================
-    def 视觉解析(self, 图像Base64, 目标语言, 模型名称, 视觉模型目录, 日志回调函数=print):
-        global torch, AutoModelForCausalLM, AutoProcessor, Image
-        if torch is None:
-            import torch
-            from transformers import AutoModelForCausalLM, AutoProcessor
-            from PIL import Image
+    def 视觉解析(self, 图像Base64, 目标语言, 模型名称, 搜索目录列表, 日志回调函数=print):
+        # 局部载入专用的多模态类，避免污染全局文本模型加载流
+        import torch
+        from transformers import AutoProcessor, AutoModelForVision2Seq, AutoModel
+        from PIL import Image
 
-        # 1. 图像解码与准备
+        # 1. 图像解码与防爆显存限制
         if "," in 图像Base64: 
             图像Base64 = 图像Base64.split(",")[1]
         img_data = base64.b64decode(图像Base64)
         image = Image.open(BytesIO(img_data)).convert("RGB")
+        image.thumbnail((1536, 1536))
 
-        # 2. 模型挂载
-        模型路径 = os.path.join(视觉模型目录, 模型名称)
-        if not os.path.exists(模型路径): 
-            raise Exception(f"未在 prompt_generator 目录找到视觉模型: {模型名称}")
+        # 2. 模型挂载寻址机制
+        模型路径 = None
+        for 目录 in 搜索目录列表:
+            测试路径 = os.path.join(目录, 模型名称)
+            if os.path.exists(测试路径):
+                模型路径 = 测试路径
+                break
+                
+        if not 模型路径: 
+            raise Exception(f"未找到视觉模型 '{模型名称}'。\n搜索范围：{搜索目录列表}")
 
         if self.当前加载模型名 != 模型名称:
             self.清理显存()
             日志回调函数(f">>> 正在将多模态视觉模型载入显存: {模型名称}...")
             
-            # MiniCPM 与 Qwen-VL 在加载时存在底层差异
+            # 根据模型家族派发不同的底层装载类
             if "MiniCPM" in 模型名称:
-                # 面向 MiniCPM 的特供加载模式
-                self.模型实例 = AutoModelForCausalLM.from_pretrained(模型路径, trust_remote_code=True, torch_dtype=torch.float16, device_map="auto")
+                self.模型实例 = AutoModel.from_pretrained(模型路径, trust_remote_code=True, torch_dtype=torch.float16, device_map="auto")
                 self.模型实例.eval()
                 self.分词器 = AutoProcessor.from_pretrained(模型路径, trust_remote_code=True)
             else:
-                # 面向 Qwen2-VL/Qwen3-VL 的通用加载模式
                 self.分词器 = AutoProcessor.from_pretrained(模型路径, trust_remote_code=True)
-                self.模型实例 = AutoModelForCausalLM.from_pretrained(模型路径, device_map="auto", torch_dtype="auto", trust_remote_code=True)
+                try:
+                    self.模型实例 = AutoModelForVision2Seq.from_pretrained(模型路径, device_map="auto", torch_dtype="auto", trust_remote_code=True)
+                except Exception as class_error:
+                    日志回调函数(f">>> Vision2Seq 类装载被拒，尝试使用 AutoModel 降级装载... ({str(class_error)})")
+                    self.模型实例 = AutoModel.from_pretrained(模型路径, device_map="auto", torch_dtype="auto", trust_remote_code=True)
+                
                 self.模型实例.eval()
+                
             self.当前加载模型名 = 模型名称
 
-        sys_prompt = f"""你是一个 ComfyUI 节点解析专家。分析用户提供的截图并翻译为 {目标语言}。
-【严格规则】：
-1. 提取图像右上角带背景色的小字，放入外层 "_plugin_guess" 字段中。
-2. 左上角的大字是真实类名，作为主 Key。
-3. 左侧是 inputs，右侧是 outputs，中间输入框是 widgets。
-4. 必须且只输出 JSON 代码块！
-【输出规范】：
+        # 【核心修正】：增加精准的 One-Shot 示例，彻底抹杀大模型输出 type 和 default 的行为
+        sys_prompt = f"""你是一个专业的 ComfyUI 节点解析与本地化翻译专家。请仔细分析用户提供的节点截图，提取所有信息并严格按照字典格式翻译为 {目标语言}。
+
+【核心提取与翻译规则】：
+1. 插件名提取：提取图像右上角带背景色的小字，作为 "_plugin_guess" 的值。
+2. 类名与标题：左上角的大字作为 JSON 的主键（Key），并将它的翻译放入内部的 "title" 字段中。
+3. 变量归属：左侧连接点是 "inputs"，右侧连接点是 "outputs"，节点中间的参数输入框是 "widgets"。
+4. 字典格式：内部结构必须严格是 {{"英文原文": "{目标语言}翻译"}}。绝对禁止编造嵌套字典（例如禁止生成 type, default 等无关属性）！
+5. 必须意译：对于 "source_path", "image", "max_pixels" 等参数，必须直接翻译为通顺的 {目标语言}。
+6. 必须且只能输出合法的 JSON 代码块！
+
+【必须严格遵守的输出格式示例】：
 {{
-  "_plugin_guess": "右上角插件名",
-  "节点类名": {{ "title": "节点中文名", "inputs": {{...}}, "widgets": {{...}}, "outputs": {{...}}, "description": "描述..." }}
+  "_plugin_guess": "Qwen3-VL-Instruct-Plus",
+  "Qwen3 VQA Plus": {{
+    "title": "Qwen3 视觉问答增强版",
+    "inputs": {{
+      "source_path": "源路径",
+      "image": "图像"
+    }},
+    "widgets": {{
+      "text": "文本 1",
+      "text2": "文本 2",
+      "model": "模型",
+      "quantization": "量化",
+      "keep_model_loaded": "保持模型加载",
+      "temperature": "温度",
+      "max_new_tokens": "最大生成令牌数"
+    }},
+    "outputs": {{}},
+    "description": "基于 Qwen3 的多模态视觉节点"
+  }}
 }}"""
 
-        # 3. 针对不同模型的架构，构造特定的多模态 Prompt
+        # 3. 构造特定的多模态 Prompt
         try:
             if "MiniCPM" in 模型名称:
-                # MiniCPM 专属对话结构
-                msgs = [{"role": "user", "content": [image, sys_prompt + "\n请提取图片中节点信息并转为标准JSON。"]}]
+                msgs = [{"role": "user", "content": [image, sys_prompt + f"\n请提取图片中节点信息并严格按照示例格式转为 {目标语言} 的 JSON 字典。"]}]
                 content = self.模型实例.chat(image=None, msgs=msgs, tokenizer=self.分词器)
-                
             else:
-                # Qwen-VL 通用对话结构
                 messages = [
                     {"role": "system", "content": [{"type": "text", "text": sys_prompt}]},
                     {"role": "user", "content": [
                         {"type": "image", "image": image},
-                        {"type": "text", "text": "请提取图中节点信息并翻译为JSON。"}
+                        {"type": "text", "text": f"请提取图中节点信息并严格按照示例格式翻译为 {目标语言} 的 JSON 字典。"}
                     ]}
                 ]
                 text = self.分词器.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -210,7 +235,6 @@ class 大模型客户端:
         except Exception as err:
             raise Exception(f"显卡推理崩溃，可能是显存不足或模型架构不兼容。底层错误: {str(err)}")
 
-        # 4. JSON 抽离器
         if "```" in content: 
             content = content.split("```json")[-1].split("```")[0].strip()
         elif "{" in content: 
