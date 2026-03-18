@@ -1,0 +1,19 @@
+
+# =======================================
+# 飞行汉化 (Flying Translation) 依赖清单
+# =======================================
+
+# 1. 核心大模型加载与推理 (Qwen 等模型必需)
+transformers>=4.37.0
+accelerate>=0.26.0
+sentencepiece
+
+# 2. 从镜像站高速下载模型必需
+huggingface_hub
+
+# 3. 异步网络请求 (与云端算力通信)
+aiohttp
+
+# 注意: torch (PyTorch) 未在此列出，
+# 因为运行 ComfyUI 的环境本身已经包含了深度定制版的 PyTorch。
+# 强制在此安装可能会覆盖 ComfyUI 原有的 GPU 版本 torch。
