@@ -38,14 +38,14 @@ export const 视觉面板HTML = `
         </div>
         
         <div id="视觉-滑动窗口" style="display: none; flex: 1; min-height: 0; margin-top: 15px; position: relative; overflow: hidden; border-radius: 6px;">
-            <div id="视觉-滑动轨道" style="display: flex; width: 200%; height: 100%; transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);">
+            <div id="视觉-滑动轨道" style="display: flex; width: 200%; height: 100%; flex-shrink: 0; transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);">
                 
-                <div id="视觉-编辑区" style="width: 50%; height: 100%; display: flex; flex-direction: column; padding: 2px;">
+                <div id="视觉-编辑区" style="width: 50%; height: 100%; flex-shrink: 0; display: flex; flex-direction: column; padding: 2px;">
                     <h3 style="flex-shrink: 0; color: #38bdf8; font-size: 13px; margin: 0 0 5px 0;"><i class="fas fa-tasks"></i> 代码审查编排 (Code Review)</h3>
                     <div id="视觉-编辑器挂载点" style="flex: 1; min-height: 0; overflow: hidden; border-radius: 6px;"></div>
                 </div>
 
-                <div id="视觉-成功区" style="width: 50%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; background: rgba(16,185,129,0.05); border: 1px dashed rgba(16,185,129,0.3); border-radius: 8px;">
+                <div id="视觉-成功区" style="width: 50%; height: 100%; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; background: rgba(16,185,129,0.05); border: 1px dashed rgba(16,185,129,0.3); border-radius: 8px;">
                     <i class="fas fa-check-circle" style="font-size: 56px; color: #10b981; margin-bottom: 20px; filter: drop-shadow(0 4px 6px rgba(16,185,129,0.2));"></i>
                     <h2 style="color: #10b981; font-size: 20px; margin: 0 0 15px 0; font-weight: bold;">文件已成功保存</h2>
                     <p id="视觉-保存路径文本" style="color: #cbd5e1; font-size: 11px; text-align: center; word-break: break-all; margin-bottom: 25px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 6px; width: 100%; border: 1px solid rgba(255,255,255,0.05);"></p>
