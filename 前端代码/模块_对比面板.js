@@ -29,7 +29,7 @@ export function 挂载对比面板(容器目标) {
             
             <div id="合并结果-包裹区" style="display: none; flex: 1; flex-direction: column; margin-top: 15px; min-height: 0;">
                 <h3 style="flex-shrink: 0; color: #d35400; font-size: 13px; margin: 0 0 10px 0;"><i class="fas fa-eye"></i> 合并结果审查 (Result Review)</h3>
-                <div id="合并编辑器挂载点" style="flex: 1; overflow: hidden; padding: 2px;"></div>
+                <div id="合并编辑器挂载点" style="flex: 1; overflow: hidden; padding: 2px; position: relative;"></div>
             </div>
         </div>
     `;
@@ -63,8 +63,45 @@ export function 挂载对比面板(容器目标) {
         结果区.style.display = 'flex'; 
         
         const 挂载点 = 容器.querySelector('#合并编辑器挂载点');
-        挂载点.innerHTML = '';
         
+        // 【核心改进】：动态注入支持左滑过渡的 200% 宽度轨道结构
+        挂载点.innerHTML = `
+            <div style="display: flex; width: 200%; height: 100%; transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);" class="ft-slider-track">
+                
+                <div style="width: 50%; height: 100%; display: flex; flex-direction: column; padding: 2px;" class="ft-editor-pane"></div>
+                
+                <div style="width: 50%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; background: rgba(16,185,129,0.05); border: 1px dashed rgba(16,185,129,0.3); border-radius: 8px;" class="ft-success-pane">
+                    <i class="fas fa-check-circle" style="font-size: 56px; color: #10b981; margin-bottom: 20px; filter: drop-shadow(0 4px 6px rgba(16,185,129,0.2));"></i>
+                    <h2 style="color: #10b981; font-size: 20px; margin: 0 0 15px 0; font-weight: bold;">合并覆写成功</h2>
+                    <p class="ft-save-path-text" style="color: #cbd5e1; font-size: 11px; text-align: center; word-break: break-all; margin-bottom: 25px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 6px; width: 100%; border: 1px solid rgba(255,255,255,0.05);"></p>
+                    
+                    <div style="display: flex; gap: 15px; width: 100%; justify-content: center;">
+                        <button class="ft-btn ft-btn-open-path" style="background: #38bdf8; color: #fff; padding: 10px 20px;">
+                            <i class="fas fa-folder-open"></i> 打开所在文件夹
+                        </button>
+                        <button class="ft-btn ft-btn-return" style="background: #475569; color: #fff; padding: 10px 20px;">
+                            <i class="fas fa-undo"></i> 返回界面第一步
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        `;
+        
+        const track = 挂载点.querySelector('.ft-slider-track');
+        const editorPane = 挂载点.querySelector('.ft-editor-pane');
+        const pathText = 挂载点.querySelector('.ft-save-path-text');
+        const btnOpen = 挂载点.querySelector('.ft-btn-open-path');
+        const btnReturn = 挂载点.querySelector('.ft-btn-return');
+
+        btnOpen.addEventListener('click', async () => {
+            const path = pathText.innerText;
+            if (!path) return;
+            try { await fetch('/flying_trans/api/open_folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: path }) }); } catch(e) { window.飞行汉化_提示("打开失败，请检查网络", "error"); }
+        });
+
+        btnReturn.addEventListener('click', 回退视图逻辑);
+
         let 新_str = JSON.stringify(新数据字典, null, 4).replace(/^\{\s*/, '').replace(/\s*\}\s*$/, '');
         let 旧_str = JSON.stringify(旧数据字典, null, 4).replace(/^\{\s*/, '').replace(/\s*\}\s*$/, '');
         
@@ -80,7 +117,6 @@ export function 挂载对比面板(容器目标) {
         
         try { window.飞行汉化缓存.暂存编辑数据 = JSON.parse(预设文本); } catch(e) {}
         
-        // 传递 true 生成带有“放弃并返回”按钮的高级编辑器
         const 编辑器实例 = 生成高级JSON编辑器DOM(预设文本, true, true);
         
         if (编辑器实例.btn返回) {
@@ -88,16 +124,15 @@ export function 挂载对比面板(容器目标) {
         }
         
         编辑器实例.更改状态('conflict');
-        挂载点.appendChild(编辑器实例.DOM);
-        
-        编辑器实例.提示区.className = 'ft-msg-box warning';
-        编辑器实例.提示区.innerHTML = `<i class="fas fa-exclamation-triangle"></i> <b>发现同名文件 / 双文件合并！</b><br><span style="color:#666; font-size:11px;">系统已将【新提取内容】置于上方，【已有文件内容】追加于下方。请点击上方工具栏的<b>“排除已翻译”</b>，自动为您剔除重复项，完美保留旧翻译并只添加新节点！</span>`;
+        editorPane.appendChild(编辑器实例.DOM);
         
         const btn保存 = 编辑器实例.DOM.querySelector('.btn-save');
         btn保存.addEventListener('click', async () => {
             btn保存.disabled = true;
-            btn保存.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在保存 (Saving...)';
+            btn保存.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在强制保存 (Saving...)';
             
+            let 保存成功标记 = false;
+
             try {
                 const 最终数据 = JSON.parse(编辑器实例.获取内容());
                 const 响应 = await fetch('/flying_trans/api/save_file', {
@@ -114,17 +149,28 @@ export function 挂载对比面板(容器目标) {
                 const 结果 = await 响应.json();
                 
                 if (结果.status === 'success') {
+                    保存成功标记 = true;
                     编辑器实例.更改状态('success');
-                    编辑器实例.提示区.className = 'ft-msg-box success';
-                    编辑器实例.提示区.innerHTML = `<i class="fas fa-check-circle"></i> <b>合并覆写成功!</b><br><span style="color:#666; font-size:10px;">${结果.path}</span>`;
-                } else { throw new Error(结果.message); }
+                    window.飞行汉化_提示("合并覆写成功！", "success");
+                    
+                    // 【核心触发】：保存成功后执行左滑过渡
+                    pathText.innerText = 结果.path;
+                    track.style.transform = 'translateX(-50%)';
+                    
+                } else { 
+                    throw new Error(结果.message); 
+                }
                 
             } catch(e) {
-                编辑器实例.更改状态('conflict');
-                编辑器实例.提示区.className = 'ft-msg-box error';
-                编辑器实例.提示区.innerHTML = `<i class="fas fa-times-circle"></i> <b>保存失败:</b> ${e.message}`;
+                window.飞行汉化_提示(`保存失败: ${e.message}`, "error");
             } finally {
-                btn保存.disabled = false;
+                if (btn保存.isConnected) {
+                    btn保存.disabled = false;
+                    btn保存.innerHTML = '<i class="fas fa-exclamation-triangle"></i> 确认结果并强制保存';
+                    if (!保存成功标记) {
+                        编辑器实例.更改状态('conflict');
+                    }
+                }
             }
         });
     };

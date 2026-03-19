@@ -29,11 +29,38 @@ export const 视觉面板HTML = `
             
             <label style="font-size: 11px; color: #94a3b8;">2. 目标归属文件核对 (确认无误后方可保存):</label>
             <input type="text" id="视觉-归属文件" value="未归属视觉节点.json" style="width: 100%; box-sizing: border-box; padding: 8px; margin-top: 6px; border: 1px solid #10b981; border-radius: 4px; background: rgba(16,185,129,0.1); color: #fff; font-weight: bold; font-size: 12px; outline: none;" />
+
+            <label style="font-size: 11px; color: #94a3b8; margin-top: 10px;">3. 扫描主键校准 (将截图显示名转换为插件底层代码类名):</label>
+            <div style="display: flex; gap: 8px; margin-top: 6px;">
+                <input type="text" id="视觉-核对主键" placeholder="等待提取节点主键..." style="flex: 1; padding: 8px; border: 1px solid #475569; border-radius: 4px; background: rgba(0,0,0,0.5); color: #f39c12; font-weight: bold; font-size: 12px; outline: none;" />
+                <button id="btn-扫描主键" class="ft-btn" style="padding: 8px 15px; font-size: 11px; background: #8b5cf6; color: white; white-space: nowrap;"><i class="fas fa-radar"></i> 扫描源码并替换</button>
+            </div>
         </div>
         
-        <div id="视觉-编辑区" style="display: none; flex-direction: column; flex: 1; min-height: 0; margin-top: 15px; padding: 2px;">
-            <h3 style="flex-shrink: 0; color: #38bdf8; font-size: 13px; margin: 0 0 5px 0;"><i class="fas fa-tasks"></i> 代码审查编排 (Code Review)</h3>
-            <div id="视觉-编辑器挂载点" style="flex: 1; min-height: 0; overflow: hidden; border-radius: 6px;"></div>
+        <div id="视觉-滑动窗口" style="display: none; flex: 1; min-height: 0; margin-top: 15px; position: relative; overflow: hidden; border-radius: 6px;">
+            <div id="视觉-滑动轨道" style="display: flex; width: 200%; height: 100%; transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);">
+                
+                <div id="视觉-编辑区" style="width: 50%; height: 100%; display: flex; flex-direction: column; padding: 2px;">
+                    <h3 style="flex-shrink: 0; color: #38bdf8; font-size: 13px; margin: 0 0 5px 0;"><i class="fas fa-tasks"></i> 代码审查编排 (Code Review)</h3>
+                    <div id="视觉-编辑器挂载点" style="flex: 1; min-height: 0; overflow: hidden; border-radius: 6px;"></div>
+                </div>
+
+                <div id="视觉-成功区" style="width: 50%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; background: rgba(16,185,129,0.05); border: 1px dashed rgba(16,185,129,0.3); border-radius: 8px;">
+                    <i class="fas fa-check-circle" style="font-size: 56px; color: #10b981; margin-bottom: 20px; filter: drop-shadow(0 4px 6px rgba(16,185,129,0.2));"></i>
+                    <h2 style="color: #10b981; font-size: 20px; margin: 0 0 15px 0; font-weight: bold;">文件已成功保存</h2>
+                    <p id="视觉-保存路径文本" style="color: #cbd5e1; font-size: 11px; text-align: center; word-break: break-all; margin-bottom: 25px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 6px; width: 100%; border: 1px solid rgba(255,255,255,0.05);"></p>
+                    
+                    <div style="display: flex; gap: 15px; width: 100%; justify-content: center;">
+                        <button id="btn-视觉打开路径" class="ft-btn" style="background: #38bdf8; color: #fff; padding: 10px 20px;">
+                            <i class="fas fa-folder-open"></i> 打开所在文件夹
+                        </button>
+                        <button id="btn-视觉返回首屏" class="ft-btn" style="background: #475569; color: #fff; padding: 10px 20px;">
+                            <i class="fas fa-undo"></i> 返回继续提取
+                        </button>
+                    </div>
+                </div>
+
+            </div>
         </div>
 
         <div id="视觉-日志区" style="flex-shrink: 0; margin-top: 15px; height: 160px; overflow-y: auto; background: #0f172a; color: #38bdf8; font-family: monospace; font-size: 11px; padding: 10px; border-radius: 6px; border: 1px inset rgba(255,255,255,0.05);">

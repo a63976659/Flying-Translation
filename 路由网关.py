@@ -96,11 +96,17 @@ def 注册路由(app):
             for 根, _, 文件在 in os.walk(插件路径):
                 for 文件名 in 文件在:
                     if 文件名.endswith('.py'):
+                        文件路径 = os.path.join(根, 文件名)
+                        # 【补充强化】：增加双重编码兼容，防止含有中文注释的 GBK 文件导致提取中断
                         try:
-                            with open(os.path.join(根, 文件名), 'r', encoding='utf-8') as f: 
+                            with open(文件路径, 'r', encoding='utf-8') as f: 
                                 解析器.visit(ast.parse(f.read()))
-                        except: 
-                            continue
+                        except UnicodeDecodeError:
+                            try:
+                                with open(文件路径, 'r', encoding='gbk') as f: 
+                                    解析器.visit(ast.parse(f.read()))
+                            except: continue
+                        except: continue
                             
             if not 解析器.解析结果: 
                 return web.json_response({"status": "error", "message": "未提取到有效的 ComfyUI 节点。"})
@@ -196,14 +202,12 @@ def 注册路由(app):
             最高分 = 0.0
             
             关键词_小写 = 关键词.lower()
-            # 【修复遗漏】：补回对 comfyui 前缀的彻底切除
             关键词_纯净 = 关键词_小写.replace("comfyui-", "").replace("comfyui_", "").replace("comfyui", "").replace("-", "").replace("_", "").replace(" ", "")
             if not 关键词_纯净: 
                 return web.json_response({"status": "success", "matched_folder": ""})
             
             for 目录 in 所有目录:
                 目录_小写 = 目录.lower()
-                # 【修复遗漏】：补回对 comfyui 前缀的彻底切除
                 目录_纯净 = 目录_小写.replace("comfyui-", "").replace("comfyui_", "").replace("comfyui", "").replace("-", "").replace("_", "").replace(" ", "")
                 
                 if 关键词_纯净 in 目录_纯净 or 目录_纯净 in 关键词_纯净:
@@ -359,6 +363,128 @@ def 注册路由(app):
                     数据 = json.load(f)
                 return web.json_response({"status": "success", "history": 数据})
             return web.json_response({"status": "success", "history": []})
+        except Exception as e:
+            return web.json_response({"status": "error", "message": str(e)})
+
+    # ==========================================
+    # API 12: 探测云端排队状态
+    # ==========================================
+    @routes.get("/flying_trans/api/cloud_queue")
+    async def 获取云端排队状态(request):
+        try:
+            专属云端地址 = "https://zhiwei666-flying-translatio-api.hf.space/api/queue_status"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(专属云端地址, timeout=5) as resp:
+                    if resp.status == 200:
+                        数据 = await resp.json()
+                        return web.json_response(数据)
+            return web.json_response({"status": "error", "waiting": 0})
+        except:
+            return web.json_response({"status": "error", "waiting": 0})
+
+    # ==========================================
+    # API 13: 视觉节点主键校准 (AST 深度扫描类名与显示名映射)
+    # ==========================================
+    @routes.post("/flying_trans/api/calibrate_node_key")
+    async def 视觉主键校准(request):
+        try:
+            参数 = await request.json()
+            插件文件夹名 = 参数.get("plugin_folder", "").replace(".json", "")
+            提取的键名 = 参数.get("extracted_key", "")
+            
+            插件路径 = os.path.abspath(os.path.join(当前插件目录, "..", 插件文件夹名))
+            if not os.path.exists(插件路径):
+                return web.json_response({"status": "error", "message": "插件目录不存在，请先确保步骤2归属文件正确。"})
+                
+            显示名到类名映射 = {}
+            类名集合 = set()
+            
+            class 映射提取器(ast.NodeVisitor):
+                def visit_Assign(self, node):
+                    try:
+                        for target in node.targets:
+                            if isinstance(target, ast.Name):
+                                if target.id == 'NODE_DISPLAY_NAME_MAPPINGS':
+                                    if isinstance(node.value, ast.Dict):
+                                        for k, v in zip(node.value.keys, node.value.values):
+                                            # 【补充强化】：兼容新老 Python 版本的 AST 语法树 (ast.Constant vs ast.Str)
+                                            if isinstance(k, ast.Constant) and isinstance(v, ast.Constant):
+                                                显示名到类名映射[v.value] = k.value
+                                            elif getattr(ast, 'Str', None) and isinstance(k, ast.Str) and isinstance(v, ast.Str):
+                                                显示名到类名映射[v.s] = k.s
+                                elif target.id == 'NODE_CLASS_MAPPINGS':
+                                    if isinstance(node.value, ast.Dict):
+                                        for k in node.value.keys:
+                                            if isinstance(k, ast.Constant):
+                                                类名集合.add(k.value)
+                                            elif getattr(ast, 'Str', None) and isinstance(k, ast.Str):
+                                                类名集合.add(k.s)
+                    except: pass
+                    self.generic_visit(node)
+            
+            for 根, _, 文件在 in os.walk(插件路径):
+                for 文件名 in 文件在:
+                    if 文件名.endswith(".py"):
+                        文件路径 = os.path.join(根, 文件名)
+                        # 【补充强化】：双重编码兼容，防止 GBK 中文导致文件跳过
+                        try:
+                            with open(文件路径, "r", encoding="utf-8") as f:
+                                tree = ast.parse(f.read())
+                                映射提取器().visit(tree)
+                        except UnicodeDecodeError:
+                            try:
+                                with open(文件路径, "r", encoding="gbk") as f:
+                                    tree = ast.parse(f.read())
+                                    映射提取器().visit(tree)
+                            except: continue
+                        except: continue
+            
+            if 提取的键名 in 显示名到类名映射:
+                return web.json_response({"status": "success", "matched_key": 显示名到类名映射[提取的键名], "method": "精准显示名匹配"})
+            
+            def 规范化(s): return str(s).replace(" ", "").replace("_", "").lower()
+            目标 = 规范化(提取的键名)
+            
+            for d_name, c_key in 显示名到类名映射.items():
+                if 规范化(d_name) == 目标:
+                    return web.json_response({"status": "success", "matched_key": c_key, "method": "模糊显示名匹配"})
+                    
+            for c_key in 类名集合:
+                if 规范化(c_key) == 目标:
+                    return web.json_response({"status": "success", "matched_key": c_key, "method": "类名直接命中"})
+                    
+            所有候选 = list(显示名到类名映射.keys()) + list(类名集合)
+            if 所有候选:
+                最佳 = difflib.get_close_matches(提取的键名, 所有候选, n=1, cutoff=0.6)
+                if 最佳:
+                    匹配词 = 最佳[0]
+                    结果键 = 显示名到类名映射.get(匹配词, 匹配词) # 如果是显示名就转类名，是类名就保持
+                    return web.json_response({"status": "success", "matched_key": 结果键, "method": "AI相似度推算"})
+                    
+            return web.json_response({"status": "fail", "message": "插件源码中未扫描到任何相似的节点名。"})
+
+        except Exception as e:
+            return web.json_response({"status": "error", "message": str(e)})
+
+    # ==========================================
+    # API 14: 打开指定文件所在的文件夹
+    # ==========================================
+    @routes.post("/flying_trans/api/open_folder")
+    async def 打开指定文件夹(request):
+        try:
+            参数 = await request.json()
+            目标路径 = 参数.get("path", "")
+            if os.path.exists(目标路径):
+                # 如果是文件，提取它的父级目录；如果是目录，则直接打开
+                目录 = os.path.dirname(目标路径) if os.path.isfile(目标路径) else 目标路径
+                if platform.system() == "Windows": 
+                    subprocess.Popen(['explorer', os.path.normpath(目录)])
+                elif platform.system() == "Darwin": 
+                    subprocess.Popen(["open", 目录])
+                else: 
+                    subprocess.Popen(["xdg-open", 目录])
+                return web.json_response({"status": "success"})
+            return web.json_response({"status": "error", "message": "文件路径不存在"})
         except Exception as e:
             return web.json_response({"status": "error", "message": str(e)})
 

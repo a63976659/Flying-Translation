@@ -20,3 +20,12 @@ export async function 引擎_视觉解析(算力模式, 目标语言, 模型名�
     });
     return await 响应.json();
 }
+
+export async function 引擎_扫描主键校准(插件文件夹名, 提取的主键名) {
+    const 响应 = await fetch('/flying_trans/api/calibrate_node_key', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ plugin_folder: 插件文件夹名, extracted_key: 提取的主键名 }) 
+    });
+    return await 响应.json();
+}

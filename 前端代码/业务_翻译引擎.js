@@ -1,7 +1,7 @@
 import { 生成高级JSON编辑器DOM } from "./组件_代码编辑器.js";
 
 // ==========================================
-// 核心逻辑：分块控制与 API 交互 (带有高级调试日志与中断检测)
+// 核心逻辑：分块控制与 API 交互
 // ==========================================
 export async function 执行流式翻译(数据字典, 原文件名, 容器) {
     const 日志区 = 容器.querySelector('#日志区');
@@ -39,6 +39,26 @@ export async function 执行流式翻译(数据字典, 原文件名, 容器) {
         
         const 块序号 = Math.floor(i/块大小) + 1;
         写日志(`>>> 🚀 正在发送分块 [${块序号}] 至 ${算力引擎} ...`);
+
+        let 排队探测器 = null;
+        if (算力引擎 === 'cloud') {
+            const 探测云端 = async () => {
+                try {
+                    const r = await fetch('/flying_trans/api/cloud_queue');
+                    const status = await r.json();
+                    if (status.waiting > 0) {
+                        if (status.waiting === 1) 写日志(`<span style="color:#38bdf8">☁️ 云端畅通：当前仅您 1 人，正在极速处理...</span>`);
+                        else 写日志(`<span style="color:#f39c12">⏳ 云端拥挤：总计 ${status.waiting} 个任务，前方还有 ${status.waiting - 1} 人排队中...</span>`);
+                    }
+                } catch(e) {}
+            };
+            探测云端();
+            排队探测器 = setInterval(探测云端, 8000); 
+        }
+
+        const 超时报警 = setTimeout(() => {
+            写日志(`<span style="color:#e74c3c">⚠️ 严重提醒：当前分块响应已超 120 秒，建议稍后重试。</span>`);
+        }, 120000); 
         
         try {
             const 响应 = await fetch('/flying_trans/api/translate', {
@@ -46,6 +66,9 @@ export async function 执行流式翻译(数据字典, 原文件名, 容器) {
                 body: JSON.stringify({ compute_mode: 算力引擎, target_language: 语言, model_name: 模型, data: 请求数据 })
             });
             const 结果 = await 响应.json();
+            
+            if (排队探测器) clearInterval(排队探测器);
+            clearTimeout(超时报警);
             
             if (结果.status === 'success') {
                 Object.assign(结果池, 结果.data);
@@ -59,6 +82,8 @@ export async function 执行流式翻译(数据字典, 原文件名, 容器) {
                 写日志(`<span style="color:#e74c3c">✖ [分块 ${块序号}] 云端/后端报错: ${结果.message} (回退保留原文)</span>`);
             }
         } catch(e) {
+            if (排队探测器) clearInterval(排队探测器);
+            clearTimeout(超时报警);
             Object.assign(结果池, 请求数据);
             写日志(`<span style="color:#e74c3c">✖ [分块 ${块序号}] 网络致命错误: ${e.message} (回退保留原文)</span>`);
         }
@@ -85,39 +110,92 @@ export async function 执行流式翻译(数据字典, 原文件名, 容器) {
 }
 
 // ==========================================
-// 编辑器渲染与后端写入流
+// 编辑器渲染与后端写入流 (引入滑动与结算面板)
 // ==========================================
 function 呼出编辑器窗口(数据, 原始文件名, 语言, 容器) {
     容器.querySelector('#状态-配置').style.display = 'none';
     const 态编辑器 = 容器.querySelector('#状态-编辑器');
-    态编辑器.style.display = 'flex'; // 配合外层 flex
+    态编辑器.style.display = 'flex'; 
     
     const 挂载点 = 容器.querySelector('#编辑器挂载点');
-    挂载点.innerHTML = ''; 
     
+    // 【核心改进】：动态注入支持左滑过渡的 200% 宽度轨道结构
+    挂载点.innerHTML = `
+        <div style="display: flex; width: 200%; height: 100%; transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);" class="ft-slider-track">
+            
+            <div style="width: 50%; height: 100%; display: flex; flex-direction: column; padding: 2px;" class="ft-editor-pane"></div>
+            
+            <div style="width: 50%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; background: rgba(16,185,129,0.05); border: 1px dashed rgba(16,185,129,0.3); border-radius: 8px;" class="ft-success-pane">
+                <i class="fas fa-check-circle" style="font-size: 56px; color: #10b981; margin-bottom: 20px; filter: drop-shadow(0 4px 6px rgba(16,185,129,0.2));"></i>
+                <h2 style="color: #10b981; font-size: 20px; margin: 0 0 15px 0; font-weight: bold;">文件已成功保存</h2>
+                <p class="ft-save-path-text" style="color: #cbd5e1; font-size: 11px; text-align: center; word-break: break-all; margin-bottom: 25px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 6px; width: 100%; border: 1px solid rgba(255,255,255,0.05);"></p>
+                
+                <div style="display: flex; gap: 15px; width: 100%; justify-content: center;">
+                    <button class="ft-btn ft-btn-open-path" style="background: #38bdf8; color: #fff; padding: 10px 20px;">
+                        <i class="fas fa-folder-open"></i> 打开所在文件夹
+                    </button>
+                    <button class="ft-btn ft-btn-return" style="background: #475569; color: #fff; padding: 10px 20px;">
+                        <i class="fas fa-undo"></i> 返回继续提取
+                    </button>
+                </div>
+            </div>
+            
+        </div>
+    `;
+    
+    const track = 挂载点.querySelector('.ft-slider-track');
+    const editorPane = 挂载点.querySelector('.ft-editor-pane');
+    const pathText = 挂载点.querySelector('.ft-save-path-text');
+    const btnOpen = 挂载点.querySelector('.ft-btn-open-path');
+    const btnReturn = 挂载点.querySelector('.ft-btn-return');
+
+    btnOpen.addEventListener('click', async () => {
+        const path = pathText.innerText;
+        if (!path) return;
+        try { await fetch('/flying_trans/api/open_folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: path }) }); } catch(e) { window.飞行汉化_提示("打开失败，请检查网络", "error"); }
+    });
+
+    btnReturn.addEventListener('click', () => {
+        态编辑器.style.display = 'none';
+        容器.querySelector('#状态-配置').style.display = 'block';
+        const 进度条 = 容器.querySelector('#进度条');
+        const 进度文本 = 容器.querySelector('#进度文本');
+        const 日志区 = 容器.querySelector('#日志区');
+        if (进度条) 进度条.style.width = '0%';
+        if (进度文本) 进度文本.innerText = '0%';
+        if (日志区) 日志区.innerHTML = '';
+    });
+
     const 预设文本 = JSON.stringify(数据, null, 4);
     const 编辑器实例 = 生成高级JSON编辑器DOM(预设文本, true);
-    挂载点.appendChild(编辑器实例.DOM);
+    editorPane.appendChild(编辑器实例.DOM);
 
     编辑器实例.DOM.querySelector('.btn-save').addEventListener('click', async () => {
         const btn = 编辑器实例.DOM.querySelector('.btn-save');
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在处理保存逻辑...';
         
+        let 保存成功标记 = false; // 拦截 finally 错误状态重置
+
         try {
             const 最终数据 = JSON.parse(编辑器实例.获取内容());
             const 响应 = await fetch('/flying_trans/api/save_file', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename: 原始文件名, language: 语言, data: 最终数据, force_overwrite: false }) // 默认不覆盖
+                body: JSON.stringify({ filename: 原始文件名, language: 语言, data: 最终数据, force_overwrite: false }) 
             });
             const 结果 = await 响应.json();
             
             if (结果.status === 'success') {
-                编辑器实例.提示区.className = 'ft-msg-box success';
-                编辑器实例.提示区.innerHTML = `<i class="fas fa-check-circle"></i> <b>保存成功!</b><br><span style="color:#666;">${结果.path}</span>`;
+                保存成功标记 = true;
+                编辑器实例.更改状态('success');
+                window.飞行汉化_提示("节点已成功保存！", "success");
+                
+                // 【核心触发】：保存成功后执行左滑过渡
+                pathText.innerText = 结果.path;
+                track.style.transform = 'translateX(-50%)';
+
             } else if (结果.status === 'exists') {
-                // 【核心跳转】：如果发现同名文件，立刻呼出合并面板！
                 if (window.飞行汉化_智能唤起合并) {
                     window.飞行汉化_智能唤起合并(结果.existing_data, 最终数据, 原始文件名);
                 } else {
@@ -128,11 +206,15 @@ function 呼出编辑器窗口(数据, 原始文件名, 语言, 容器) {
             }
             
         } catch (e) {
-            编辑器实例.提示区.className = 'ft-msg-box error';
-            编辑器实例.提示区.innerHTML = `<i class="fas fa-times-circle"></i> <b>保存失败:</b> ${e.message}`;
+            window.飞行汉化_提示(`保存失败: ${e.message}`, "error");
         } finally {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-save"></i> 确认并保存';
+            if (btn.isConnected) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-save"></i> 确认结果并保存';
+                if (!保存成功标记 && 编辑器实例.更改状态) {
+                    编辑器实例.更改状态('default'); 
+                }
+            }
         }
     });
 }
