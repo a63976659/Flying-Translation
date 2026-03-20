@@ -337,7 +337,7 @@ app.registerExtension({
         if (app.extensionManager && app.extensionManager.registerSidebarTab) {
             app.extensionManager.registerSidebarTab({
                 id: "flying-translation-sidebar", 
-                title: "飞行汉化", 
+                title: "飞行翻译", 
                 icon: "pi pi-globe", 
                 type: "custom",
                 render: (container) => {
