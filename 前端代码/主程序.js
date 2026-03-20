@@ -7,7 +7,7 @@ const 支持语言 = ["中文", "英文", "日文", "韩文", "法文", "德文"
 
 // 【核心机制】：四象限物理隔离模型池，确保文本/视觉、本地/云端绝不串台
 const 模型池 = {
-    local_text: ["Qwen2.5-3B-Instruct", "Qwen2.5-7B-Instruct"],
+    local_text: ["Qwen2.5-3B-Instruct", "Qwen3-4B-Instruct-2507", "Qwen2.5-7B-Instruct"],
     local_vision: [
         "Qwen3-VL-4B-Instruct-FP8", 
         "Qwen3-VL-8B-Instruct-FP8", 
