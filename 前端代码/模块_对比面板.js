@@ -140,7 +140,8 @@ export function 挂载对比面板(容器目标) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         filename: 原始文件名,
-                        language: 'Merged',
+                        // 核心修正：动态获取用户选择的语言，保证多语言合并落盘不出错
+                        language: window.飞行汉化缓存.当前目标语言 || 'Merged', 
                         data: 最终数据,
                         force_overwrite: true 
                     })

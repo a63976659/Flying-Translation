@@ -19,12 +19,12 @@ const 模型池 = {
     cloud_text: [
         "Qwen/Qwen2.5-7B-Instruct", 
         "Qwen/Qwen3-4B-Instruct-2507", 
-        "Qwen/Qwen2.5-72B-Instruct"
+        "Qwen/Qwen3.5-9B"
     ],
     cloud_vision: [
         "Qwen/Qwen2.5-VL-7B-Instruct", 
-        "Qwen/Qwen2.5-VL-32B-Instruct", 
-        "Qwen/Qwen3-VL-30B-A3B-Instruct"
+        "Qwen/Qwen3-VL-8B-Instruct", 
+        "Qwen/Qwen3.5-9B"
     ] 
 };
 
@@ -161,7 +161,7 @@ function 构建侧边栏DOM() {
     容器.innerHTML = `
         <div class="飞行汉化-顶栏">
             <h2 id="btn-关于页面" style="cursor: pointer; transition: 0.3s; display: flex; align-items: center; justify-content: space-between;" title="点击查看工具介绍与作者信息">
-                <span><i class="fas fa-satellite-dish"></i> 飞行翻译双语版 <span style="font-size: 11px; opacity: 0.8; font-weight: normal; margin-left: 4px;">(Flying-Translation)</span></span>
+                <span><i class="fas fa-satellite-dish"></i> 飞行翻译 <span style="font-size: 11px; opacity: 0.8; font-weight: normal; margin-left: 4px;">(Flying-Translation)</span></span>
                 <i class="fas fa-info-circle" style="font-size: 14px; opacity: 0.6;"></i>
             </h2>
             <div class="算力切换器">
@@ -206,6 +206,8 @@ function 构建侧边栏DOM() {
                     2. <b>云端本地双擎：</b> 灵活无缝切换本地显卡算力与专属云端矩阵。<br>
                     3. <b>智能 AST 解析：</b> 静态语法树降维解析，一键查重、自动修复防爆错。<br>
                     4. <b>极速内存合并：</b> 安全的增量追加覆写，全方位保护您的翻译进度。
+                    <br><br>
+                    <b>云端报错：</b> 算力耗尽导致。
                 </p>
             </div>
 

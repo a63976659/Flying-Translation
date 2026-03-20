@@ -97,7 +97,6 @@ def 注册路由(app):
                 for 文件名 in 文件在:
                     if 文件名.endswith('.py'):
                         文件路径 = os.path.join(根, 文件名)
-                        # 【补充强化】：增加双重编码兼容，防止含有中文注释的 GBK 文件导致提取中断
                         try:
                             with open(文件路径, 'r', encoding='utf-8') as f: 
                                 解析器.visit(ast.parse(f.read()))
@@ -158,7 +157,6 @@ def 注册路由(app):
                         return web.json_response({"status": "error", "message": "请求超时。"})
             
             elif 计算模式 == "local":
-                # 定义双向智能搜索目录，优先搜索 prompt_generator，其次搜索 LLM
                 if 图像Base64: 
                     def 运行本地视觉推理():
                         搜索目录列表 = [
@@ -185,7 +183,7 @@ def 注册路由(app):
             return web.json_response({"status": "error", "message": str(e)})
 
     # ==========================================
-    # API 6: 智能模糊匹配文件夹 (深度剥离版，专治 ComfyUI 前缀)
+    # API 6: 智能模糊匹配文件夹
     # ==========================================
     @routes.post("/flying_trans/api/smart_match_plugin")
     async def 智能匹配插件(request):
@@ -228,7 +226,7 @@ def 注册路由(app):
             return web.json_response({"status": "error", "message": str(e)})
 
     # ==========================================
-    # API 7: 接收前端编辑结果，精准覆写本地硬盘 (支持增量追加)
+    # API 7: 接收前端编辑结果，精准覆写本地硬盘 (支持多语言动态映射)
     # ==========================================
     @routes.post("/flying_trans/api/save_file")
     async def 保存文件(request):
@@ -240,19 +238,46 @@ def 注册路由(app):
             强制覆盖 = 参数.get("force_overwrite", False)
             增量追加 = 参数.get("append_mode", False) 
             
-            标准汉化目录 = os.path.join(ComfyUI根目录, "custom_nodes", "ComfyUI-Chinese-Translation", "zh-CN", "Nodes")
+            # --- 【核心修改】：多语言标准目录映射矩阵 ---
+            语言目录映射 = {
+                "中文": "zh-CN", 
+                "英文": "en-US", "English": "en-US",
+                "日文": "ja-JP", "日本語": "ja-JP",
+                "韩文": "ko-KR", "한국어": "ko-KR",
+                "法文": "fr-FR", "Français": "fr-FR",
+                "德文": "de-DE", "Deutsch": "de-DE",
+                "西班牙语": "es-ES", "Español": "es-ES",
+                "俄语": "ru-RU", "Русский": "ru-RU",
+                "阿拉伯语": "ar", "عربي": "ar",
+                "土耳其语": "tr-TR", "Türkçe": "tr-TR",
+                "葡萄牙语": "pt-BR", "Português (BR)": "pt-BR",
+                "波斯语": "fa-IR", "فارسی": "fa-IR",
+                "Merged": "zh-CN" # 防止前端漏传时回退到中文
+            }
             
-            if os.path.exists(标准汉化目录) and ("中文" in 目标语言 or "Merged" in 目标语言):
-                最终绝对路径 = os.path.join(标准汉化目录, 纯文件名)
+            语言代码 = 语言目录映射.get(目标语言)
+            多语言插件根目录 = os.path.join(ComfyUI根目录, "custom_nodes", "ComfyUI-Chinese-Translation")
+            最终绝对路径 = None
+            
+            # 如果命中了语言映射表，并且用户安装了多语言翻译基础插件
+            if 语言代码 and os.path.exists(多语言插件根目录):
+                目标多语言Nodes目录 = os.path.join(多语言插件根目录, 语言代码, "Nodes")
+                # 如果对应语言的文件夹不存在，自动创建（例如 ja-JP/Nodes）
+                if not os.path.exists(目标多语言Nodes目录):
+                    os.makedirs(目标多语言Nodes目录, exist_ok=True)
+                最终绝对路径 = os.path.join(目标多语言Nodes目录, 纯文件名)
             else:
+                # 兜底：如果未安装基础翻译插件，或者选择了未知语言，输出到当前插件的"输出成品"目录
                 最终输出目录 = os.path.join(当前插件目录, "输出成品")
                 if not os.path.exists(最终输出目录): 
                     os.makedirs(最终输出目录)
                 名称部分, 扩展名 = os.path.splitext(纯文件名)
                 最终绝对路径 = os.path.join(最终输出目录, f"{名称部分}_{目标语言}{扩展名}")
             
+            # 确保父目录存在（防止意外错误）
             if not os.path.exists(os.path.dirname(最终绝对路径)): 
                 os.makedirs(os.path.dirname(最终绝对路径), exist_ok=True)
+            # ---------------------------------------------
 
             if os.path.exists(最终绝对路径) and 增量追加:
                 try:
@@ -407,7 +432,6 @@ def 注册路由(app):
                                 if target.id == 'NODE_DISPLAY_NAME_MAPPINGS':
                                     if isinstance(node.value, ast.Dict):
                                         for k, v in zip(node.value.keys, node.value.values):
-                                            # 【补充强化】：兼容新老 Python 版本的 AST 语法树 (ast.Constant vs ast.Str)
                                             if isinstance(k, ast.Constant) and isinstance(v, ast.Constant):
                                                 显示名到类名映射[v.value] = k.value
                                             elif getattr(ast, 'Str', None) and isinstance(k, ast.Str) and isinstance(v, ast.Str):
@@ -426,7 +450,6 @@ def 注册路由(app):
                 for 文件名 in 文件在:
                     if 文件名.endswith(".py"):
                         文件路径 = os.path.join(根, 文件名)
-                        # 【补充强化】：双重编码兼容，防止 GBK 中文导致文件跳过
                         try:
                             with open(文件路径, "r", encoding="utf-8") as f:
                                 tree = ast.parse(f.read())
@@ -458,7 +481,7 @@ def 注册路由(app):
                 最佳 = difflib.get_close_matches(提取的键名, 所有候选, n=1, cutoff=0.6)
                 if 最佳:
                     匹配词 = 最佳[0]
-                    结果键 = 显示名到类名映射.get(匹配词, 匹配词) # 如果是显示名就转类名，是类名就保持
+                    结果键 = 显示名到类名映射.get(匹配词, 匹配词) 
                     return web.json_response({"status": "success", "matched_key": 结果键, "method": "AI相似度推算"})
                     
             return web.json_response({"status": "fail", "message": "插件源码中未扫描到任何相似的节点名。"})
@@ -475,7 +498,6 @@ def 注册路由(app):
             参数 = await request.json()
             目标路径 = 参数.get("path", "")
             if os.path.exists(目标路径):
-                # 如果是文件，提取它的父级目录；如果是目录，则直接打开
                 目录 = os.path.dirname(目标路径) if os.path.isfile(目标路径) else 目标路径
                 if platform.system() == "Windows": 
                     subprocess.Popen(['explorer', os.path.normpath(目录)])

@@ -55,19 +55,25 @@ class 大模型客户端:
         日志回调函数(">>> ✅ 模型加载成功！")
 
     def 分块翻译(self, 数据块, 目标语言, 进度回调函数=None):
-        system_prompt = f"""
-你是一个专业的 ComfyUI 插件本地化翻译专家。任务是将 JSON 文件中的英文字符串（Value）翻译成 {目标语言}。
+        # 动态构建系统提示词，适配多国语言
+        system_prompt = f"""你是一个专业的 ComfyUI 插件多语言本地化翻译专家。你的任务是将 JSON 文件中的原始字符串（Value）翻译成：【{目标语言}】。
 
 【核心规则】
 1. 绝对禁止修改 JSON 的键名（Key）！只能翻译键值（Value）。
-2. "inputs", "widgets", "outputs" 结构内部必须保留键名。
-3. 【强制翻译 title】"title" 和 "description" 是面向用户的展示字段，哪怕是驼峰命名（如 IntLiteral, LoadImage），也必须拆分为通顺的 {目标语言}！绝不能照抄英文。
-4. 【强制意译变量】对于带下划线、数字（如 image_1）或全大写（如 BATCH_SIZE）的变量，必须意译（如“图像 1”、“批次大小”）。
-5. 【保留术语】"clip", "vae", "latent", "lora", "cond", "uncond", "seed", "step" 必须保留原样。
-6. 中文语境下："mask" 统一译为 "遮罩"；"image" 统一译为 "图像"。
-7. 必须且只能输出合法的 JSON 代码，绝不要包含 ```json 等 Markdown 标记或解释！
+2. "inputs", "widgets", "outputs" 结构内部必须严格保留原生键名。
+3. 【强制翻译】"title" 和 "description" 是面向用户的展示字段，必须拆分并翻译为通顺的【{目标语言}】！绝不能照抄原文。
+4. 【意译变量】对于带下划线、数字（如 image_1）或全大写的变量，必须按照【{目标语言}】的表达习惯进行意译。
+5. 【保留专业术语】"clip", "vae", "latent", "lora", "cond", "uncond", "seed", "step" 必须保留原样，不作翻译。"""
+
+        # 针对中文的特殊规则（按需注入）
+        if "中文" in 目标语言 or "zh" in 目标语言.lower():
+            system_prompt += "\n6. 【中文特有语境】'mask' 统一译为 '遮罩'；'image' 统一译为 '图像'。"
+
+        system_prompt += f"""
+【输出强制要求】必须且只能输出合法的 JSON 代码块，绝不要包含 ```json 等 Markdown 标记或解释说明！
 
 【翻译参考示例】
+（注意：以下示例仅用于演示 JSON 结构，不管示例中输出的是什么语言，你的实际输出必须全部使用【{目标语言}】！）
 输入:
 {{
   "IntLiteral": {{
@@ -81,11 +87,11 @@ class 大模型客户端:
 输出:
 {{
   "IntLiteral": {{
-    "title": "整数文本",
-    "inputs": {{"image_1": "图像 1", "mask": "遮罩"}},
-    "widgets": {{"seed": "seed", "resize_mode": "缩放模式"}},
-    "outputs": {{"IMAGE": "图像", "LATENT": "LATENT"}},
-    "description": "类别: 逻辑"
+    "title": "[IntLiteral 的 {目标语言} 翻译]",
+    "inputs": {{"image_1": "[image 1 的 {目标语言} 翻译]", "mask": "[mask 的 {目标语言} 翻译]"}},
+    "widgets": {{"seed": "seed", "resize_mode": "[resize_mode 的 {目标语言} 翻译]"}},
+    "outputs": {{"IMAGE": "[IMAGE 的 {目标语言} 翻译]", "LATENT": "LATENT"}},
+    "description": "[Category: Logic 的 {目标语言} 翻译]"
   }}
 }}
 """
@@ -131,22 +137,19 @@ class 大模型客户端:
         return self._执行规则后处理(result, 目标语言)
 
     # ==========================================
-    # 核心：本地多模态视觉推理分支 (彻底分离架构)
+    # 核心：本地多模态视觉推理分支
     # ==========================================
     def 视觉解析(self, 图像Base64, 目标语言, 模型名称, 搜索目录列表, 日志回调函数=print):
-        # 局部载入专用的多模态类，避免污染全局文本模型加载流
         import torch
         from transformers import AutoProcessor, AutoModelForVision2Seq, AutoModel
         from PIL import Image
 
-        # 1. 图像解码与防爆显存限制
         if "," in 图像Base64: 
             图像Base64 = 图像Base64.split(",")[1]
         img_data = base64.b64decode(图像Base64)
         image = Image.open(BytesIO(img_data)).convert("RGB")
         image.thumbnail((1536, 1536))
 
-        # 2. 模型挂载寻址机制
         模型路径 = None
         for 目录 in 搜索目录列表:
             测试路径 = os.path.join(目录, 模型名称)
@@ -161,7 +164,6 @@ class 大模型客户端:
             self.清理显存()
             日志回调函数(f">>> 正在将多模态视觉模型载入显存: {模型名称}...")
             
-            # 根据模型家族派发不同的底层装载类
             if "MiniCPM" in 模型名称:
                 self.模型实例 = AutoModel.from_pretrained(模型路径, trust_remote_code=True, torch_dtype=torch.float16, device_map="auto")
                 self.模型实例.eval()
@@ -178,14 +180,13 @@ class 大模型客户端:
                 
             self.当前加载模型名 = 模型名称
 
-        # 【核心修正】：增加精准的 One-Shot 示例，彻底抹杀大模型输出 type 和 default 的行为
-        sys_prompt = f"""你是一个专业的 ComfyUI 节点解析与本地化翻译专家。请仔细分析用户提供的节点截图，提取所有信息并严格按照字典格式翻译为 {目标语言}。
+        sys_prompt = f"""你是一个专业的 ComfyUI 节点解析与本地化翻译专家。请仔细分析用户提供的节点截图，提取所有信息并严格按照字典格式翻译为：【{目标语言}】。
 
 【核心提取与翻译规则】：
 1. 插件名提取：提取图像右上角带背景色的小字，作为 "_plugin_guess" 的值。
 2. 类名与标题：左上角的大字作为 JSON 的主键（Key），并将它的翻译放入内部的 "title" 字段中。
 3. 变量归属：左侧连接点是 "inputs"，右侧连接点是 "outputs"，节点中间的参数输入框是 "widgets"。
-4. 字典格式：内部结构必须严格是 {{"英文原文": "{目标语言}翻译"}}。绝对禁止编造嵌套字典（例如禁止生成 type, default 等无关属性）！
+4. 字典格式：内部结构必须严格是 {{"原始变量名": "{目标语言}翻译"}}。绝对禁止编造嵌套字典（例如禁止生成 type, default 等无关属性）！
 5. 必须意译：对于 "source_path", "image", "max_pixels" 等参数，必须直接翻译为通顺的 {目标语言}。
 6. 必须且只能输出合法的 JSON 代码块！
 
@@ -193,26 +194,20 @@ class 大模型客户端:
 {{
   "_plugin_guess": "Qwen3-VL-Instruct-Plus",
   "Qwen3 VQA Plus": {{
-    "title": "Qwen3 视觉问答增强版",
+    "title": "[节点名称的 {目标语言} 翻译]",
     "inputs": {{
-      "source_path": "源路径",
-      "image": "图像"
+      "source_path": "[source_path 的 {目标语言} 翻译]",
+      "image": "[image 的 {目标语言} 翻译]"
     }},
     "widgets": {{
-      "text": "文本 1",
-      "text2": "文本 2",
-      "model": "模型",
-      "quantization": "量化",
-      "keep_model_loaded": "保持模型加载",
-      "temperature": "温度",
-      "max_new_tokens": "最大生成令牌数"
+      "text": "[text 的 {目标语言} 翻译]",
+      "quantization": "[quantization 的 {目标语言} 翻译]"
     }},
     "outputs": {{}},
-    "description": "基于 Qwen3 的多模态视觉节点"
+    "description": "[节点功能的 {目标语言} 描述]"
   }}
 }}"""
 
-        # 3. 构造特定的多模态 Prompt
         try:
             if "MiniCPM" in 模型名称:
                 msgs = [{"role": "user", "content": [image, sys_prompt + f"\n请提取图片中节点信息并严格按照示例格式转为 {目标语言} 的 JSON 字典。"]}]
@@ -253,13 +248,14 @@ class 大模型客户端:
         return self._执行规则后处理(result, 目标语言)
 
     def _执行规则后处理(self, 数据, 目标语言):
-        是否为中文 = "中文" in 目标语言
+        是否为中文 = "中文" in 目标语言 or "zh" in 目标语言.lower()
 
         def 递归替换(obj):
             if isinstance(obj, dict): return {k: 递归替换(v) for k, v in obj.items()}
             elif isinstance(obj, list): return [递归替换(i) for i in obj]
             elif isinstance(obj, str):
                 val = obj
+                # 只有当目标语言是中文时，才应用中文特有词汇修正
                 if 是否为中文:
                     if "掩码" in val: val = val.replace("掩码", "遮罩")
                     if "蒙版" in val: val = val.replace("蒙版", "遮罩")
