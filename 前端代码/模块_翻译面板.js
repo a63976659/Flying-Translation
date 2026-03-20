@@ -52,10 +52,10 @@ export function 挂载翻译面板(容器目标) {
 
             <div style="display: flex; gap: 10px; margin-top: 15px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 15px; flex-shrink: 0;">
                 <button id="btn-打开缓存" class="ft-btn" style="flex: 1; background: rgba(255,255,255,0.05); color: #cbd5e1; font-size: 11px;">
-                    <i class="fas fa-folder-open"></i> 缓存视界
+                    <i class="fas fa-folder-open"></i> 缓存文件
                 </button>
                 <button id="btn-清空缓存" class="ft-btn" style="flex: 1; background: rgba(231,76,60,0.1); color: #e74c3c; font-size: 11px;">
-                    <i class="fas fa-trash-alt"></i> 清空矩阵残存
+                    <i class="fas fa-trash-alt"></i> 清空缓存
                 </button>
             </div>
         </div>
@@ -228,7 +228,7 @@ export function 挂载翻译面板(容器目标) {
     容器.querySelector('#btn-打开缓存').addEventListener('click', async () => { 
         try { 
             await fetch('/flying_trans/api/open_cache_folder', { method: 'POST' }); 
-            window.飞行汉化_提示("缓存视界已在系统顶层展开", "info"); 
+            window.飞行汉化_提示("缓存文件已在系统顶层展开", "info"); 
         } catch (e) { 
             window.飞行汉化_提示("指令被系统拒绝", "error"); 
         } 
@@ -245,7 +245,7 @@ export function 挂载翻译面板(容器目标) {
             
             setTimeout(() => { 
                 确认清理状态 = false; 
-                btn清空.innerHTML = '<i class="fas fa-trash-alt"></i> 清空矩阵残存'; 
+                btn清空.innerHTML = '<i class="fas fa-trash-alt"></i> 清空缓存'; 
                 btn清空.style.background = 'rgba(231,76,60,0.1)'; 
                 btn清空.style.color = '#e74c3c'; 
             }, 3000);
@@ -261,7 +261,7 @@ export function 挂载翻译面板(容器目标) {
         }
         
         确认清理状态 = false; 
-        btn清空.innerHTML = '<i class="fas fa-trash-alt"></i> 清空矩阵残存'; 
+        btn清空.innerHTML = '<i class="fas fa-trash-alt"></i> 清空缓存'; 
         btn清空.style.background = 'rgba(231,76,60,0.1)'; 
         btn清空.style.color = '#e74c3c';
     });
